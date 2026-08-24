@@ -1,0 +1,134 @@
+name: Promote production hardening
+
+on:
+  push:
+    branches: [production-hardening]
+    paths:
+      - ".hardening/run"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-production-hardening
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: personalised_upsell_release
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d personalised_upsell_release"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      SHOPIFY_API_KEY: release_gate_key
+      SHOPIFY_API_SECRET: release_gate_secret_that_is_long_enough
+      SHOPIFY_APP_URL: https://release-gate.example.com
+      SCOPES: read_products,read_orders
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/personalised_upsell_release?schema=public
+      CRON_SECRET: release_gate_cron_secret_at_least_32_chars
+    steps:
+      - name: Check out hardening branch
+        uses: actions/checkout@v4
+        with:
+          ref: production-hardening
+          fetch-depth: 0
+
+      - name: Configure Git identity and incorporate current main
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git merge --no-edit origin/main
+
+      - name: Generate clean release tree
+        run: |
+          set -euo pipefail
+          find . -maxdepth 1 -type f -delete
+          find . -mindepth 1 -maxdepth 1 -type d ! -name .git ! -name .github ! -name .hardening -exec rm -rf {} +
+          mkdir -p .github/workflows
+          find .github/workflows -maxdepth 1 -type f ! -name promote-hardening.yml -delete
+          node .hardening/bootstrap-foundation.mjs
+          node .hardening/bootstrap-admin.mjs
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.hardening/bootstrap-checkout.mjs')
+          needle = '$' + '{{'
+          path.write_text(path.read_text().replace(needle, '\\' + needle))
+          PY
+          node .hardening/bootstrap-checkout.mjs
+          node .hardening/bootstrap-fixes.mjs
+          node .hardening/bootstrap-release-fixes.mjs
+          rm -rf .hardening
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+          cache-dependency-path: package.json
+
+      - name: Produce deterministic dependency lock
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Clean dependency install
+        run: npm ci
+
+      - name: Generate Prisma client and apply fresh migrations
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
+          npx prisma migrate status
+
+      - name: Run complete source and extension validation
+        run: npm run validate
+
+      - name: Block high-severity production dependency advisories
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Build production container
+        run: docker build --build-arg SHOPIFY_APP_URL=https://release-gate.example.com -t personalised-post-purchase:release .
+
+      - name: Smoke test the production server and database health endpoint
+        run: |
+          set -euo pipefail
+          PORT=3000 npm start > /tmp/personalised-upsell.log 2>&1 &
+          server_pid=$!
+          cleanup() { kill "$server_pid" 2>/dev/null || true; }
+          trap cleanup EXIT
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:3000/api/health > /tmp/health.json; then
+              cat /tmp/health.json
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/personalised-upsell.log
+          exit 1
+
+      - name: Commit only after every gate passes
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/promote-hardening.yml
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No release changes were generated."
+            exit 1
+          fi
+          git commit -m "feat: production-harden personalised post-purchase app"
+          git push origin HEAD:production-hardening
+          git push origin HEAD:main
