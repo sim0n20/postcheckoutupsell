@@ -1,0 +1,36 @@
+client_id = ""
+name = "Personalised Post Purchase"
+application_url = "https://YOUR_APP_DOMAIN"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+
+[access_scopes]
+scopes = "read_products,read_orders,write_orders"
+
+[auth]
+redirect_urls = ["https://YOUR_APP_DOMAIN/auth/callback"]
+
+[webhooks]
+api_version = "2026-07"
+
+[[webhooks.subscriptions]]
+topics = ["app/uninstalled"]
+uri = "/webhooks/app/uninstalled"
+
+[[webhooks.subscriptions]]
+topics = ["orders/updated"]
+uri = "/webhooks/orders/updated"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/data_request"]
+uri = "/webhooks/customers/data_request"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/redact"]
+uri = "/webhooks/customers/redact"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["shop/redact"]
+uri = "/webhooks/shop/redact"

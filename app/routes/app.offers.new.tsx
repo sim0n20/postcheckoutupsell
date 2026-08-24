@@ -1,0 +1,1 @@
+export {loader,action,default} from "./app.offers.$id";

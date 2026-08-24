@@ -1,0 +1,1 @@
+import type {ActionFunctionArgs} from "react-router";import {authenticate} from "../shopify.server";import prisma from "../db.server";export async function action({request}:ActionFunctionArgs){const{shop}=await authenticate.webhook(request);await prisma.shop.deleteMany({where:{domain:shop}});await prisma.session.deleteMany({where:{shop}});return new Response(null,{status:200});}

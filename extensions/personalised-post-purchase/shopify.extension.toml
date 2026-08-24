@@ -1,0 +1,6 @@
+name = "Personalised Post Purchase"
+type = "checkout_post_purchase"
+
+[[metafields]]
+namespace = "personalised_upsell"
+key = "details"

@@ -1,0 +1,8 @@
+{
+  "name": "personalised-post-purchase-extension",
+  "private": true,
+  "dependencies": {
+    "@shopify/post-purchase-ui-extensions-react": "^0.13.3",
+    "react": "^17.0.2"
+  }
+}

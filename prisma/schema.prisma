@@ -1,0 +1,136 @@
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "postgresql" url = env("DATABASE_URL") }
+
+model Session {
+  id String @id
+  shop String
+  state String
+  isOnline Boolean @default(false)
+  scope String?
+  expires DateTime?
+  accessToken String
+  userId BigInt?
+  firstName String?
+  lastName String?
+  email String?
+  accountOwner Boolean @default(false)
+  locale String?
+  collaborator Boolean? @default(false)
+  emailVerified Boolean? @default(false)
+  refreshToken String?
+  refreshTokenExpires DateTime?
+  @@index([shop])
+}
+
+model Shop {
+  domain String @id
+  installedAt DateTime @default(now())
+  uninstalledAt DateTime?
+  currencyCode String @default("GBP")
+  timezone String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  offers Offer[]
+  acceptances Acceptance[]
+  events AnalyticsEvent[]
+  settings ShopSettings?
+}
+
+model ShopSettings {
+  id String @id @default(cuid())
+  shopDomain String @unique
+  orderTag String @default("personalised-upsell")
+  productionEmail String?
+  privacyContact String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  shop Shop @relation(fields:[shopDomain], references:[domain], onDelete:Cascade)
+}
+
+model Offer {
+  id String @id @default(cuid())
+  shopDomain String
+  name String @default("Personalised upsell")
+  status String @default("ACTIVE")
+  priority Int @default(100)
+  variantId String
+  productId String?
+  productTitle String
+  variantTitle String?
+  productImageUrl String?
+  currencyCode String @default("GBP")
+  originalPrice Decimal @db.Decimal(12,2)
+  discountType String @default("percentage")
+  discountValue Decimal @default(15) @db.Decimal(12,2)
+  headline String @default("Add a personalised extra")
+  description String @default("Personalise this item and add it to your order in one click.")
+  buttonLabel String @default("Add personalised item")
+  triggerMode String @default("ALWAYS")
+  triggerConfig Json?
+  metafieldNamespace String @default("personalised_upsell")
+  metafieldKey String @default("details")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  shop Shop @relation(fields:[shopDomain], references:[domain], onDelete:Cascade)
+  fields PersonalisationField[]
+  acceptances Acceptance[]
+  events AnalyticsEvent[]
+  @@index([shopDomain,status,priority])
+}
+
+model PersonalisationField {
+  id String @id @default(cuid())
+  offerId String
+  key String
+  type String @default("TEXT")
+  label String
+  placeholder String?
+  helpText String?
+  required Boolean @default(false)
+  minLength Int?
+  maxLength Int?
+  options Json?
+  sortOrder Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  offer Offer @relation(fields:[offerId], references:[id], onDelete:Cascade)
+  @@unique([offerId,key])
+  @@index([offerId,sortOrder])
+}
+
+model Acceptance {
+  id String @id @default(cuid())
+  shopDomain String
+  referenceId String
+  offerId String
+  variantId String
+  personalisation Json
+  status String @default("PENDING")
+  orderId String?
+  orderName String?
+  errorMessage String?
+  appliedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  shop Shop @relation(fields:[shopDomain], references:[domain], onDelete:Cascade)
+  offer Offer @relation(fields:[offerId], references:[id], onDelete:Cascade)
+  @@unique([shopDomain,referenceId,offerId])
+  @@index([shopDomain,status,createdAt])
+  @@index([orderId])
+}
+
+model AnalyticsEvent {
+  id String @id @default(cuid())
+  shopDomain String
+  offerId String?
+  type String
+  referenceId String?
+  revenue Decimal? @db.Decimal(12,2)
+  currencyCode String?
+  metadata Json?
+  createdAt DateTime @default(now())
+  shop Shop @relation(fields:[shopDomain], references:[domain], onDelete:Cascade)
+  offer Offer? @relation(fields:[offerId], references:[id], onDelete:SetNull)
+  @@index([shopDomain,type,createdAt])
+  @@index([offerId,type,createdAt])
+}
